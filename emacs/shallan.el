@@ -106,6 +106,63 @@ there was an error."
       (process-send-string proc query)
       (process-send-eof proc))))
 
+(defmacro shallan--save-destructive-excursion (&rest body)
+  "Try to preserve position of point while executing BODY.
+This works by saving the text immediately surrounding point in
+the current buffer, then searching for it again after BODY is
+done. That way, even if BODY deletes and re-inserts the text of
+the buffer, point may still be preserved."
+  (declare (indent 0))
+  ;; TODO: implement
+  `(progn
+     ,@body))
+
+(defun shallan--update-list-albums (&optional callback)
+  "Update `shallan-list-albums-mode' buffer with a new query."
+  (let ((buf (current-buffer)))
+    (shallan--sqlite-query
+     "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
+     (lambda ()
+       (let ((text (buffer-string)))
+         (with-current-buffer buf
+           (unless (derived-mode-p #'shallan-list-albums-mode)
+             (error "Not in `shallan-list-albums-mode'"))
+           (shallan--save-destructive-excursion
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (insert text)))
+           (when callback
+             (funcall callback))))))))
+
+(defun shallan--revert-list-albums (&rest _)
+  "Value for `revert-buffer-function' in `shallan-list-albums-mode'."
+  (message "Updating album list...")
+  (shallan--update-list-albums
+   (lambda ()
+     (message "Updating album list...done"))))
+
+(defvar shallan-list-albums-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map special-mode-map)
+    map)
+  "Keymap for `shallan-list-albums-mode'.")
+
+(define-derived-mode shallan-list-albums-mode special-mode "Shallan/Albums"
+  "Major mode that lists the albums in your library."
+  (setq-local revert-buffer-function #'shallan--revert-list-albums))
+
+(defun shallan-list-albums ()
+  "Browse the albums in your library."
+  (interactive)
+  (shallan--validate-environment)
+  (with-current-buffer (get-buffer-create "*shallan albums*")
+    (shallan-list-albums-mode)
+    (message "Fetching album list...")
+    (shallan--update-list-albums
+     (lambda ()
+       (message "Fetching album list...done")
+       (pop-to-buffer (current-buffer))))))
+
 (provide 'shallan)
 
 ;;; shallan.el ends here
