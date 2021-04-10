@@ -113,9 +113,36 @@ the current buffer, then searching for it again after BODY is
 done. That way, even if BODY deletes and re-inserts the text of
 the buffer, point may still be preserved."
   (declare (indent 0))
-  ;; TODO: implement
-  `(progn
-     ,@body))
+  (let ((orig-line (gensym "orig-line-number"))
+        (orig-line-text (gensym "orig-line"))
+        (orig-column (gensym "orig-column"))
+        (orig-window-starts (gensym "orig-window-starts")))
+    `(let ((,orig-line (line-number-at-pos))
+           (,orig-line-text (buffer-substring-no-properties
+                             (point-at-bol) (point-at-eol)))
+           (,orig-column (current-column))
+           (,orig-window-starts (make-hash-table :test #'eq)))
+       (dolist (win (get-buffer-window-list nil nil t))
+         (puthash win (window-start win) ,orig-window-starts))
+       ,@body
+       (goto-line ,orig-line)
+       (let* ((before-line (save-excursion
+                             (search-backward ,orig-line-text nil 'noerror)
+                             (line-number-at-pos)))
+              (after-line (save-excursion
+                            (search-forward ,orig-line-text nil 'noerror)
+                            (line-number-at-pos)))
+              (before-dist (- ,orig-line before-line))
+              (after-dist (- after-line ,orig-line))
+              (new-line (if (< before-dist after-dist)
+                            before-line
+                          after-line)))
+         (goto-line new-line)
+         (move-to-column ,orig-column)
+         (maphash
+          (lambda (win start)
+            (set-window-start win start))
+          ,orig-window-starts)))))
 
 (defun shallan--update-list-albums (&optional callback)
   "Update `shallan-list-albums-mode' buffer with a new query."
