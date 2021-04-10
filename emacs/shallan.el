@@ -132,12 +132,17 @@ the buffer, point may still be preserved."
               (after-line (save-excursion
                             (search-forward ,orig-line-text nil 'noerror)
                             (line-number-at-pos)))
-              (before-dist (- ,orig-line before-line))
-              (after-dist (- after-line ,orig-line))
-              (new-line (if (< before-dist after-dist)
-                            before-line
-                          after-line)))
-         (goto-line new-line)
+              (before-dist (when before-line
+                             (- ,orig-line before-line)))
+              (after-dist (when after-line
+                            (- after-line ,orig-line)))
+              (new-line (cond
+                         ((null after-dist) before-line)
+                         ((null before-dist) after-line)
+                         ((< before-dist after-dist) before-line)
+                         (t after-line))))
+         (when new-line
+           (goto-line new-line))
          (move-to-column ,orig-column)
          (maphash
           (lambda (win start)
