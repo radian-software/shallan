@@ -17,6 +17,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'let-alist)
 (require 'subr-x)
 
 (defgroup shallan nil
@@ -74,6 +75,19 @@ usual."
         (kill-buffer (process-get proc 'stderr-buffer))
         (funcall callback text)))))
 
+(defcustom shallan-sqlite-separator ?|
+  "Separator character used for SQLite queries.
+This character may not appear in any field stored in the database."
+  :type 'character)
+
+(defun shallan-sqlite-quote (string)
+  "Quote STRING for use in a SQLite query.
+This means wrapping it in single quotes and doubling any existing
+single quotes."
+  (format "'%s'" (replace-regexp-in-string
+                  "'" "''" string
+                  'fixedcase 'literal)))
+
 (defun shallan-sqlite-query (query &optional callback)
   "Execute SQL QUERY string against database.
 Invoke CALLBACK with the query results as a string. Delete the
@@ -99,12 +113,51 @@ CALLBACK)."
                  :name "shallan query"
                  :buffer stdout-buffer
                  :stderr stderr-buffer
-                 :command `("sqlite3" ,db-file)
+                 :command `("sqlite3"
+                            "-separator"
+                            ,(char-to-string shallan-sqlite-separator)
+                            ,db-file)
                  :sentinel #'shallan--sqlite-sentinel)))
       (process-put proc 'stderr-buffer stderr-buffer)
       (process-put proc 'callback (or callback #'identity))
       (process-send-string proc query)
       (process-send-eof proc))))
+
+(defun shallan--map-async (func list callback)
+  "Map FUNC over LIST asynchronously, invoking CALLBACK with results.
+FUNC takes two arguments, a list item and a callback of one
+argument. CALLBACK gets a list of the items FUNC passed to each
+callback individually. FUNC is invoked in parallel."
+  (let ((num-completed 0)
+        (vec (make-vector (length list) nil))
+        (idx 0))
+    (dolist (item list)
+      (let ((idx idx))  ; make copy
+        (funcall
+         func
+         item
+         (lambda (result)
+           (aset vec idx result)
+           (cl-incf num-completed)
+           (when (>= num-completed (length vec))
+             (funcall callback (mapcar #'identity vec))))))
+      (cl-incf idx))))
+
+(defun shallan-sqlite-query-parallel (queries &optional callback)
+  "Execute multiple SQL QUERIES against database, in parallel.
+QUERIES is an alist whose keys are symbols and whose values are
+SQL query strings. CALLBACK is passed a corresponding alist where
+the values have been replaced with the query results."
+  (shallan--map-async
+   (lambda (link callback)
+     (shallan-sqlite-query
+      (cdr link)
+      (lambda (result)
+        (funcall
+         callback
+         (cons (car link) result)))))
+   queries
+   callback))
 
 (defmacro shallan--save-destructive-excursion (&rest body)
   "Try to preserve position of point while executing BODY.
@@ -198,7 +251,8 @@ same buffer when the refresh is complete."
 
 (define-derived-mode shallan-mode special-mode "Shallan"
   "Major mode that lists the albums in your library."
-  (setq-local revert-buffer-function #'shallan--revert-buffer-function))
+  (setq-local revert-buffer-function #'shallan--revert-buffer-function)
+  (hl-line-mode +1))
 
 (cl-defun shallan-display (&key buffer mode query render)
   "Create and display an interactive Shallan buffer.
@@ -213,14 +267,57 @@ arguments when the rendering is complete."
     (shallan-mode)
     (setq-local mode-name (format "Shallan/%s" mode))
     (setq-local shallan--query-function
-                (if (functionp query)
-                    query
+                (cond
+                 ((functionp query)
+                  query)
+                 ((listp query)
                   (lambda (callback)
-                    (shallan-sqlite-query query callback))))
+                    (shallan-sqlite-query-parallel query callback)))
+                 (t
+                  (lambda (callback)
+                    (shallan-sqlite-query query callback)))))
     (setq-local shallan--render-function (or render #'insert))
     (shallan-refresh
      (lambda ()
        (pop-to-buffer (current-buffer))))))
+
+(defun shallan-parse-table (table fields)
+  "Parse TABLE of SQL query results.
+FIELDS is a list of symbols for the columns in the table. Return
+a list of alists mapping FIELDS to their respective values in
+each row of the table."
+  (let ((rows nil))
+    (replace-regexp-in-string
+     (format
+      "\\(?:^%s$\\)\n\\|\\(\\)"
+      (string-join
+       (make-list
+        (length fields)
+        (format "\\([^%c]*\\)" shallan-sqlite-separator))
+       (regexp-quote (char-to-string shallan-sqlite-separator))))
+     (lambda (match)
+       (prog1 ""
+         (when (match-string (1+ (length fields)) table)
+           (with-current-buffer (get-buffer-create " *shallan query parse*")
+             (special-mode)
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (insert table))
+             (goto-char (match-beginning 0))
+             (pop-to-buffer (current-buffer)))
+           (error "Failed to parse %d fields from query row" (length fields)))
+         (push
+          (cl-mapcar
+           (lambda (field num)
+             (cons
+              field
+              (match-string num match)))
+           fields
+           (number-sequence 1 (length fields)))
+          rows)))
+     table
+     'fixedcase)
+    (nreverse rows)))
 
 (defun shallan-list-albums ()
   "Display list of albums."
@@ -235,9 +332,50 @@ arguments when the rendering is complete."
   (shallan-display
    :buffer (format "album: %s" album)
    :mode "Album"
-   :query (format
-           "SELECT name FROM songs WHERE album = '%s' ORDER BY track"
-           album)))
+   :query `((album-data
+             . ,(format
+                 "SELECT DISTINCT album_artist, year_released FROM songs WHERE album = %s ORDER BY album_artist, year_released"
+                 (shallan-sqlite-quote album)))
+            (songs-data
+             . ,(format
+                 "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track"
+                 (shallan-sqlite-quote album))))
+   :render (lambda (data)
+             (let-alist data
+               (let ((rows
+                      (shallan-parse-table
+                       .album-data
+                       '(album-artist year-released))))
+                 (unless rows
+                   (error "No such album: %s" album))
+                 (let* ((album-artists (seq-uniq
+                                        (mapcar
+                                         (lambda (row)
+                                           (alist-get 'album-artist row))
+                                         rows)))
+                        (years-released (seq-uniq
+                                         (mapcar
+                                          (lambda (row)
+                                            (alist-get 'year-released row))
+                                          rows)))
+                        (min-year (car years-released))
+                        (max-year (car (last years-released)))
+                        (years (if (string= min-year max-year)
+                                   min-year
+                                 (format "%s-%s" min-year max-year))))
+                   (insert (format "%s - %s (%s)\n\n"
+                                   album
+                                   (string-join album-artists ", ")
+                                   years))))
+               (let ((cur-disc ""))
+                 (dolist (row (shallan-parse-table .songs-data '(disc track name)))
+                   (let-alist row
+                     (unless (string= .disc cur-disc)
+                       (if (string-empty-p .disc)
+                           (insert "[No disc]\n")
+                         (insert (format "[Disc %s]\n" .disc)))
+                       (setq cur-disc .disc))
+                     (insert (format "%4s  %s\n" .track .name)))))))))
 
 (provide 'shallan)
 
