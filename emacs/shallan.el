@@ -200,7 +200,7 @@ same buffer when the refresh is complete."
   "Major mode that lists the albums in your library."
   (setq-local revert-buffer-function #'shallan--revert-buffer-function))
 
-(cl-defun shallan-display (&key buffer-name mode-name query render)
+(cl-defun shallan-display (&key buffer mode query render)
   "Create and display an interactive Shallan buffer.
 BUFFER-NAME is the name of the buffer. If one exists already then
 it will be refreshed and displayed. MODE-NAME is the major mode
@@ -208,15 +208,10 @@ name for display in the mode line. RENDER is the rendering
 function, which inserts text into the current buffer. RENDER
 should take one CALLBACK argument which it invokes with no
 arguments when the rendering is complete."
-  (unless buffer-name
-    (error "Argument BUFFER-NAME not passed to `shallan-display'"))
-  (unless mode-name
-    (error "Argument MODE-NAME not passed to `shallan-display'"))
-  (unless query
-    (error "Argument QUERY not passed to `shallan-display'"))
   (shallan--validate-environment)
-  (with-current-buffer (get-buffer-create buffer-name)
+  (with-current-buffer (get-buffer-create (format "*shallan %s*" buffer))
     (shallan-mode)
+    (setq-local mode-name (format "Shallan/%s" mode))
     (setq-local shallan--query-function
                 (if (functionp query)
                     query
@@ -231,8 +226,8 @@ arguments when the rendering is complete."
   "Display list of albums."
   (interactive)
   (shallan-display
-   :buffer-name "*shallan albums*"
-   :mode-name "Shallan/Albums"
+   :buffer "albums"
+   :mode "Albums"
    :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"))
 
 (provide 'shallan)
