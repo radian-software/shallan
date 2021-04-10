@@ -68,18 +68,18 @@ usual."
         (pop-to-buffer (process-get proc 'stderr-buffer))
         (display-buffer (process-buffer proc))
         (error "Shallan SQLite query failed"))
-      (with-current-buffer (process-buffer proc)
-        (funcall callback))
-      (kill-buffer (process-buffer proc))
-      (kill-buffer (process-get proc 'stderr-buffer)))))
+      (let ((text (with-current-buffer (process-buffer proc)
+                    (buffer-string))))
+        (kill-buffer (process-buffer proc))
+        (kill-buffer (process-get proc 'stderr-buffer))
+        (funcall callback text)))))
 
-(defun shallan--sqlite-query (query &optional callback)
+(defun shallan-sqlite-query (query &optional callback)
   "Execute SQL QUERY string against database.
-Invoke CALLBACK in a buffer with the raw query results from
-stdout. The stderr is in the `stderr-buffer' property of the
-process, which can be retrieved using `get-buffer-process' and
-`process-get'. Once CALLBACK returns, delete the buffer, unless
-there was an error."
+Invoke CALLBACK with the query results as a string. Delete the
+process buffer before invoking CALLBACK, unless there was an
+error (in which case display the process buffer and do not invoke
+CALLBACK)."
   (let ((stdout-buffer (get-buffer-create
                         (shallan--get-unique-buffer-name
                          " *shallan query %d*")))
@@ -125,7 +125,8 @@ the buffer, point may still be preserved."
        (dolist (win (get-buffer-window-list nil nil t))
          (puthash win (window-start win) ,orig-window-starts))
        ,@body
-       (goto-line ,orig-line)
+       (goto-char (point-min))
+       (forward-line (1- ,orig-line))
        (let* ((before-line (save-excursion
                              (search-backward ,orig-line-text nil 'noerror)
                              (line-number-at-pos)))
@@ -142,58 +143,97 @@ the buffer, point may still be preserved."
                          ((< before-dist after-dist) before-line)
                          (t after-line))))
          (when new-line
-           (goto-line new-line))
+           (goto-char (point-min))
+           (forward-line (1- new-line)))
          (move-to-column ,orig-column)
          (maphash
           (lambda (win start)
             (set-window-start win start))
           ,orig-window-starts)))))
 
-(defun shallan--update-list-albums (&optional callback)
-  "Update `shallan-list-albums-mode' buffer with a new query."
+(defvar-local shallan--query-function nil
+  "Function that will fetch data for `shallan--render-function'.
+It gets a single CALLBACK argument which should be invoked with
+the data to pass to `shallan--render-function'.")
+
+(defvar-local shallan--render-function nil
+  "Function that will populate the current buffer with text.
+This gets a single argument, the value `shallan--query-function'
+passed to its CALLBACK argument. It must execute synchronously.")
+
+(defun shallan-refresh (&optional callback)
+  "Refresh the contents of the current Shallan buffer.
+If CALLBACK is provided then invoke it with no arguments in the
+same buffer when the refresh is complete."
+  (unless (derived-mode-p #'shallan-mode)
+    (error "Cannot invoke `shallan-refresh' outside of `shallan-mode'"))
   (let ((buf (current-buffer)))
-    (shallan--sqlite-query
-     "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
-     (lambda ()
-       (let ((text (buffer-string)))
-         (with-current-buffer buf
-           (unless (derived-mode-p #'shallan-list-albums-mode)
-             (error "Not in `shallan-list-albums-mode'"))
-           (shallan--save-destructive-excursion
-             (let ((inhibit-read-only t))
-               (erase-buffer)
-               (insert text)))
-           (when callback
-             (funcall callback))))))))
+    (message "Refreshing...")
+    (funcall shallan--query-function
+             (lambda (data)
+               (with-current-buffer buf
+                 (shallan--save-destructive-excursion
+                   (let ((inhibit-read-only t))
+                     (erase-buffer)
+                     (funcall shallan--render-function data)
+                     (message "Refreshing...done")
+                     (when callback
+                       (funcall callback)))))))))
 
-(defun shallan--revert-list-albums (&rest _)
-  "Value for `revert-buffer-function' in `shallan-list-albums-mode'."
-  (message "Updating album list...")
-  (shallan--update-list-albums
-   (lambda ()
-     (message "Updating album list...done"))))
+(defun shallan-visit ()
+  "Visit the thing at point in a new buffer."
+  (interactive)
+  (message "TODO"))
 
-(defvar shallan-list-albums-mode-map
+(defvar shallan-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
+    (define-key map (kbd "RET") #'shallan-visit)
     map)
   "Keymap for `shallan-list-albums-mode'.")
 
-(define-derived-mode shallan-list-albums-mode special-mode "Shallan/Albums"
+(defun shallan--revert-buffer-function (&rest _)
+  "Wrapper of `shallan-refresh' for `revert-buffer-function'."
+  (shallan-refresh))
+
+(define-derived-mode shallan-mode special-mode "Shallan"
   "Major mode that lists the albums in your library."
-  (setq-local revert-buffer-function #'shallan--revert-list-albums))
+  (setq-local revert-buffer-function #'shallan--revert-buffer-function))
+
+(cl-defun shallan-display (&key buffer-name mode-name query render)
+  "Create and display an interactive Shallan buffer.
+BUFFER-NAME is the name of the buffer. If one exists already then
+it will be refreshed and displayed. MODE-NAME is the major mode
+name for display in the mode line. RENDER is the rendering
+function, which inserts text into the current buffer. RENDER
+should take one CALLBACK argument which it invokes with no
+arguments when the rendering is complete."
+  (unless buffer-name
+    (error "Argument BUFFER-NAME not passed to `shallan-display'"))
+  (unless mode-name
+    (error "Argument MODE-NAME not passed to `shallan-display'"))
+  (unless query
+    (error "Argument QUERY not passed to `shallan-display'"))
+  (shallan--validate-environment)
+  (with-current-buffer (get-buffer-create buffer-name)
+    (shallan-mode)
+    (setq-local shallan--query-function
+                (if (functionp query)
+                    query
+                  (lambda (callback)
+                    (shallan-sqlite-query query callback))))
+    (setq-local shallan--render-function (or render #'insert))
+    (shallan-refresh
+     (lambda ()
+       (pop-to-buffer (current-buffer))))))
 
 (defun shallan-list-albums ()
-  "Browse the albums in your library."
+  "Display list of albums."
   (interactive)
-  (shallan--validate-environment)
-  (with-current-buffer (get-buffer-create "*shallan albums*")
-    (shallan-list-albums-mode)
-    (message "Fetching album list...")
-    (shallan--update-list-albums
-     (lambda ()
-       (message "Fetching album list...done")
-       (pop-to-buffer (current-buffer))))))
+  (shallan-display
+   :buffer-name "*shallan albums*"
+   :mode-name "Shallan/Albums"
+   :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"))
 
 (provide 'shallan)
 
