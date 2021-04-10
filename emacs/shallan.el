@@ -236,7 +236,9 @@ same buffer when the refresh is complete."
 (defun shallan-visit ()
   "Visit the thing at point in a new buffer."
   (interactive)
-  (message "TODO"))
+  (if-let ((func (get-text-property (point) 'shallan-visit)))
+      (funcall func)
+    (user-error "Nothing to visit at point")))
 
 (defvar shallan-mode-map
   (let ((map (make-sparse-keymap)))
@@ -325,7 +327,16 @@ each row of the table."
   (shallan-display
    :buffer "albums"
    :mode "Albums"
-   :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"))
+   :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
+   :render (lambda (albums)
+             (insert albums)
+             (put-text-property
+              (point-min) (point-max)
+              'shallan-visit
+              (lambda ()
+                (shallan-show-album
+                 (buffer-substring-no-properties
+                  (point-at-bol) (point-at-eol))))))))
 
 (defun shallan-show-album (album)
   "Display songs in album."
