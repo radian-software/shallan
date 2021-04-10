@@ -230,6 +230,15 @@ arguments when the rendering is complete."
    :mode "Albums"
    :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"))
 
+(defun shallan-show-album (album)
+  "Display songs in album."
+  (shallan-display
+   :buffer (format "album: %s" album)
+   :mode "Album"
+   :query (format
+           "SELECT name FROM songs WHERE album = '%s' ORDER BY track"
+           album)))
+
 (provide 'shallan)
 
 ;;; shallan.el ends here
