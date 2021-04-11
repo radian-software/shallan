@@ -7,8 +7,10 @@
 ;;; Code:
 
 (require 'let-alist)
+(require 'subr-x)
 
 (require 'shallan-config)
+(require 'shallan-mode)
 (require 'shallan-query)
 
 ;;;###autoload
@@ -18,7 +20,7 @@
   (shallan-display
    :buffer "albums"
    :mode "Albums"
-   :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
+   :query "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE"
    :render (lambda (albums)
              (insert albums)
              (put-text-property
@@ -43,7 +45,8 @@
 
 ;;;###autoload
 (defun shallan-show-album (&optional album)
-  "Display songs in album."
+  "Display songs in given ALBUM.
+Nil ALBUM means select one using `completing-read'."
   (interactive)
   (if album
       (shallan-display
