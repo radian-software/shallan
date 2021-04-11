@@ -67,7 +67,6 @@ usual."
       (process-put proc 'callback nil)
       (unless (zerop (process-exit-status proc))
         (pop-to-buffer (process-get proc 'stderr-buffer))
-        (display-buffer (process-buffer proc))
         (error "Shallan SQLite query failed"))
       (let ((text (with-current-buffer (process-buffer proc)
                     (buffer-string))))
@@ -94,6 +93,10 @@ Invoke CALLBACK with the query results as a string. Delete the
 process buffer before invoking CALLBACK, unless there was an
 error (in which case display the process buffer and do not invoke
 CALLBACK)."
+  (when (listp query)
+    (setq query (format
+                 "BEGIN TRANSACTION; %s; COMMIT TRANSACTION"
+                 (string-join query "; "))))
   (let ((stdout-buffer (get-buffer-create
                         (shallan--get-unique-buffer-name
                          " *shallan query %d*")))
@@ -108,6 +111,7 @@ CALLBACK)."
     (with-current-buffer stdout-buffer
       (special-mode))
     (with-current-buffer stderr-buffer
+      (insert query "\n\n")
       (special-mode))
     (let ((proc (make-process
                  :name "shallan query"
@@ -351,7 +355,7 @@ each row of the table."
                      (shallan-sqlite-quote album)))
                 (songs-data
                  . ,(format
-                     "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track"
+                     "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
                      (shallan-sqlite-quote album))))
        :render (lambda (data)
                  (let-alist data
@@ -398,6 +402,77 @@ each row of the table."
         (completing-read
          "Album: "
          (split-string albums "\n" 'omit-nulls)))))))
+
+(defcustom shallan-device-name (format "emacs-%s" (system-name))
+  "Name of this device. Used for play queue syncing.
+This should be unique across different devices."
+  :type 'string)
+
+(defun shallan--get-uuid ()
+  "Generate UUID for use as database primary key."
+  (format
+   "%08x%08x%08x%08x"
+   (random #x100000000)
+   (random #x100000000)
+   (random #x100000000)
+   (random #x100000000)))
+
+(defun shallan--ensure-play-queue (callback)
+  "Ensure play queue for this device is set up.
+Then invoke CALLBACK with the relevant playlist ID."
+  (shallan-sqlite-query
+   (format
+    "SELECT playlist_id FROM play_queues WHERE device = %s LIMIT 1"
+    (shallan-sqlite-quote shallan-device-name))
+   (lambda (playlist-id)
+     (if (string-empty-p playlist-id)
+         (let ((insert-queue
+                (lambda (playlist-id)
+                  (shallan-sqlite-query
+                   (format
+                    "INSERT INTO play_queues (id, device, playlist_id) VALUES (%s, %s, %s)"
+                    (shallan-sqlite-quote (shallan--get-uuid))
+                    (shallan-sqlite-quote shallan-device-name)
+                    (shallan-sqlite-quote playlist-id))
+                   (lambda (_)
+                     (funcall callback playlist-id))))))
+           (shallan-sqlite-query
+            "SELECT id FROM playlists WHERE name = 'Up Next' LIMIT 1"
+            (lambda (playlist-id)
+              (if (string-empty-p playlist-id)
+                  (let ((playlist-id (shallan--get-uuid)))
+                    (shallan-sqlite-query
+                     (format
+                      "INSERT INTO playlists (id, name) VALUES (%s, 'Up Next')"
+                      (shallan-sqlite-quote playlist-id))
+                     (lambda (_)
+                       (funcall insert-queue playlist-id))))
+                (funcall insert-queue (string-remove-suffix "\n" playlist-id))))))
+       (funcall callback (string-remove-suffix "\n" playlist-id))))))
+
+(defun shallan-play-album (album song &optional callback)
+  "Clear the play queue and add all songs of an ALBUM.
+Set the playback position to given SONG within the album.
+CALLBACK, if provided, is invoked with no arguments after work is
+completed."
+  (shallan--ensure-play-queue
+   (lambda (playlist-id)
+     (shallan-sqlite-query
+      (list
+       (format
+        "DELETE FROM playlist_songs WHERE playlist_id = %s"
+        (shallan-sqlite-quote playlist-id))
+       (format
+        "INSERT INTO playlist_songs (song_id, playlist_id, song_index) SELECT id AS song_id, %s AS playlist_id, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
+        (shallan-sqlite-quote playlist-id)
+        (shallan-sqlite-quote album))
+       (format
+        "UPDATE playlists SET song_index = (SELECT song_index FROM (SELECT name, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s) WHERE name = %s) WHERE id = %s"
+        (shallan-sqlite-quote album)
+        (shallan-sqlite-quote song)
+        (shallan-sqlite-quote playlist-id)))
+      (lambda (_)
+        (funcall callback))))))
 
 (provide 'shallan)
 
