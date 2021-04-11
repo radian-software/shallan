@@ -26,7 +26,9 @@ If anything is wrong, throw `user-error'."
   (unless shallan-library-dir
     (user-error "User option `shallan-library-dir' is not set"))
   (unless (executable-find "sqlite3")
-    (user-error "Program sqlite3 is not installed")))
+    (user-error "Program sqlite3 is not installed"))
+  (unless (executable-find "mpg321")
+    (user-error "Program mpg321 is not installed")))
 
 (defcustom shallan-device-name (format "emacs-%s" (system-name))
   "Name of this device. Used for play queue syncing.
