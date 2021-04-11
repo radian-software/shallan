@@ -9,6 +9,7 @@
 (require 'let-alist)
 
 (require 'shallan-config)
+(require 'shallan-query)
 
 ;;;###autoload
 (defun shallan-list-albums ()
@@ -26,7 +27,19 @@
               (lambda ()
                 (shallan-show-album
                  (buffer-substring-no-properties
-                  (point-at-bol) (point-at-eol))))))))
+                  (point-at-bol) (point-at-eol)))))
+             (put-text-property
+              (point-min) (point-max)
+              'shallan-play
+              (lambda ()
+                (let ((album (buffer-substring-no-properties
+                              (point-at-bol) (point-at-eol))))
+                  (shallan-sqlite-query
+                   (format
+                    "SELECT name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST LIMIT 1"
+                    (shallan-sqlite-quote album))
+                   (lambda (song)
+                     (shallan-play-album album (string-remove-suffix "\n" song))))))))))
 
 ;;;###autoload
 (defun shallan-show-album (&optional album)
@@ -79,7 +92,11 @@
                                (insert "[No disc]\n")
                              (insert (format "[Disc %s]\n" .disc)))
                            (setq cur-disc .disc))
-                         (insert (format "%4s  %s\n" .track .name))))))))
+                         (insert (propertize
+                                  (format "%4s  %s\n" .track .name)
+                                  'shallan-play
+                                  (lambda ()
+                                    (shallan-play-album album .name))))))))))
     (message "Listing albums...")
     (shallan-sqlite-query
      "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
@@ -129,7 +146,7 @@ Then invoke CALLBACK with the relevant playlist ID."
 Set the playback position to given SONG within the album.
 CALLBACK, if provided, is invoked with no arguments after work is
 completed."
-  (message "Playing %s from %s..." song album)
+  (message "Playing album %s starting at song %s..." album song)
   (shallan--ensure-play-queue
    (lambda (playlist-id)
      (shallan-sqlite-query
@@ -148,7 +165,7 @@ completed."
         (shallan-sqlite-quote playlist-id)))
       (lambda (_)
         (shallan-play-current)
-        (message "Playing %s from %s...done" song album)
+        (message "Playing album %s starting at song %s...done" album song)
         (when callback
           (funcall callback)))))))
 

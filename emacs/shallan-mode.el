@@ -90,10 +90,18 @@ same buffer when the refresh is complete."
       (funcall func)
     (user-error "Nothing to visit at point")))
 
+(defun shallan-play ()
+  "Play the thing at point in a new buffer."
+  (interactive)
+  (if-let ((func (get-text-property (point) 'shallan-play)))
+      (funcall func)
+    (user-error "Nothing to play at point")))
+
 (defvar shallan-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
     (define-key map (kbd "RET") #'shallan-visit)
+    (define-key map (kbd "SPC") #'shallan-play)
     map)
   "Keymap for `shallan-list-albums-mode'.")
 
