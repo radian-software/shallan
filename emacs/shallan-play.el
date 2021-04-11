@@ -47,6 +47,9 @@ This may also be nil.")
   (format "@F %s" (string-join (make-list 4 "\\([^ ]+\\)") " "))
   "Regexp matching @F lines in mpg321 stdout.")
 
+(defvar shallan--mpg-callback nil
+  "Function to invoke with no arguments after media finished playing.")
+
 (defun shallan--mpg-filter (proc string)
   "Process filter for `shallan--mpg-proc'."
   (when (buffer-live-p (process-buffer proc))
@@ -75,15 +78,24 @@ This may also be nil.")
               (pcase (match-string 1 cmd)
                 ((or "0" "3")
                  (setq shallan--mpg-playing nil)
-                 (setq shallan--mpg-hash nil))
+                 (setq shallan--mpg-hash nil)
+                 (setq shallan--mpg-bitrate nil)
+                 (setq shallan--mpg-cur-seek nil)
+                 (setq shallan--mpg-max-seek nil)
+                 (when (equal "3" (match-string 1 cmd))
+                   (when-let ((callback shallan--mpg-callback))
+                     (setq shallan--mpg-callback nil)
+                     (funcall callback))))
                 ("1"
                  (setq shallan--mpg-playing nil))
                 ("2"
                  (setq shallan--mpg-playing t))))))
           (delete-region (point) (1+ (point-at-eol))))))))
 
-(defun shallan--mpg-play (hash)
-  "Play media object with given SHA256 HASH from beginning."
+(defun shallan--mpg-play (hash &optional callback)
+  "Play media object with given SHA256 HASH from beginning.
+Invoke CALLBACK, if provided, with no arguments when media has
+finished playing."
   (unless (process-live-p shallan--mpg-proc)
     (let ((buf (get-buffer-create " *shallan mpg*")))
       (with-current-buffer buf
@@ -96,6 +108,7 @@ This may also be nil.")
              :filter #'shallan--mpg-filter
              :noquery t))))
   (setq shallan--mpg-hash hash)
+  (setq shallan--mpg-callback callback)
   (process-send-string
    shallan--mpg-proc
    (format "LOAD %s\n" (shallan--get-object-filename hash))))
