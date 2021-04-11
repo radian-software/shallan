@@ -338,55 +338,66 @@ each row of the table."
                  (buffer-substring-no-properties
                   (point-at-bol) (point-at-eol))))))))
 
-(defun shallan-show-album (album)
+(defun shallan-show-album (&optional album)
   "Display songs in album."
-  (shallan-display
-   :buffer (format "album: %s" album)
-   :mode "Album"
-   :query `((album-data
-             . ,(format
-                 "SELECT DISTINCT album_artist, year_released FROM songs WHERE album = %s ORDER BY album_artist, year_released"
-                 (shallan-sqlite-quote album)))
-            (songs-data
-             . ,(format
-                 "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track"
-                 (shallan-sqlite-quote album))))
-   :render (lambda (data)
-             (let-alist data
-               (let ((rows
-                      (shallan-parse-table
-                       .album-data
-                       '(album-artist year-released))))
-                 (unless rows
-                   (error "No such album: %s" album))
-                 (let* ((album-artists (seq-uniq
-                                        (mapcar
-                                         (lambda (row)
-                                           (alist-get 'album-artist row))
-                                         rows)))
-                        (years-released (seq-uniq
-                                         (mapcar
-                                          (lambda (row)
-                                            (alist-get 'year-released row))
-                                          rows)))
-                        (min-year (car years-released))
-                        (max-year (car (last years-released)))
-                        (years (if (string= min-year max-year)
-                                   min-year
-                                 (format "%s-%s" min-year max-year))))
-                   (insert (format "%s - %s (%s)\n\n"
-                                   album
-                                   (string-join album-artists ", ")
-                                   years))))
-               (let ((cur-disc ""))
-                 (dolist (row (shallan-parse-table .songs-data '(disc track name)))
-                   (let-alist row
-                     (unless (string= .disc cur-disc)
-                       (if (string-empty-p .disc)
-                           (insert "[No disc]\n")
-                         (insert (format "[Disc %s]\n" .disc)))
-                       (setq cur-disc .disc))
-                     (insert (format "%4s  %s\n" .track .name)))))))))
+  (interactive)
+  (if album
+      (shallan-display
+       :buffer (format "album: %s" album)
+       :mode "Album"
+       :query `((album-data
+                 . ,(format
+                     "SELECT DISTINCT album_artist, year_released FROM songs WHERE album = %s ORDER BY album_artist, year_released"
+                     (shallan-sqlite-quote album)))
+                (songs-data
+                 . ,(format
+                     "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track"
+                     (shallan-sqlite-quote album))))
+       :render (lambda (data)
+                 (let-alist data
+                   (let ((rows
+                          (shallan-parse-table
+                           .album-data
+                           '(album-artist year-released))))
+                     (unless rows
+                       (error "No such album: %s" album))
+                     (let* ((album-artists (seq-uniq
+                                            (mapcar
+                                             (lambda (row)
+                                               (alist-get 'album-artist row))
+                                             rows)))
+                            (years-released (seq-uniq
+                                             (mapcar
+                                              (lambda (row)
+                                                (alist-get 'year-released row))
+                                              rows)))
+                            (min-year (car years-released))
+                            (max-year (car (last years-released)))
+                            (years (if (string= min-year max-year)
+                                       min-year
+                                     (format "%s-%s" min-year max-year))))
+                       (insert (format "%s - %s (%s)\n\n"
+                                       album
+                                       (string-join album-artists ", ")
+                                       years))))
+                   (let ((cur-disc ""))
+                     (dolist (row (shallan-parse-table .songs-data '(disc track name)))
+                       (let-alist row
+                         (unless (string= .disc cur-disc)
+                           (if (string-empty-p .disc)
+                               (insert "[No disc]\n")
+                             (insert (format "[Disc %s]\n" .disc)))
+                           (setq cur-disc .disc))
+                         (insert (format "%4s  %s\n" .track .name))))))))
+    (message "Listing albums...")
+    (shallan-sqlite-query
+     "SELECT DISTINCT album FROM songs ORDER BY album_sort COLLATE NOCASE ASC"
+     (lambda (albums)
+       (message "Listing albums...done")
+       (shallan-show-album
+        (completing-read
+         "Album: "
+         (split-string albums "\n" 'omit-nulls)))))))
 
 (provide 'shallan)
 
