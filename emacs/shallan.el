@@ -455,6 +455,7 @@ Then invoke CALLBACK with the relevant playlist ID."
 Set the playback position to given SONG within the album.
 CALLBACK, if provided, is invoked with no arguments after work is
 completed."
+  (message "Playing %s from %s..." song album)
   (shallan--ensure-play-queue
    (lambda (playlist-id)
      (shallan-sqlite-query
@@ -472,7 +473,9 @@ completed."
         (shallan-sqlite-quote song)
         (shallan-sqlite-quote playlist-id)))
       (lambda (_)
-        (funcall callback))))))
+        (message "Playing %s from %s...done" song album)
+        (when callback
+          (funcall callback)))))))
 
 (provide 'shallan)
 
