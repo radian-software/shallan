@@ -163,8 +163,7 @@ completed."
        (shallan-sqlite-quote playlist-id)
        (shallan-sqlite-quote playlist-id))
       (lambda (hash)
-        (if (string-empty-p hash)
-            (user-error "No song selected")
+        (unless (string-empty-p hash)
           (shallan--mpg-play (string-remove-suffix "\n" hash) #'shallan-play-next)))))))
 
 (defun shallan-play-next ()
@@ -174,12 +173,22 @@ completed."
    (lambda (playlist-id)
      (shallan-sqlite-query
       (format
-       "SELECT song_hash FROM songs WHERE id IN (SELECT song_id FROM playlist_songs WHERE playlist_id = %s AND song_index IN (SELECT song_index + 1 AS song_index FROM playlists WHERE id = %s)) LIMIT 1"
-       (shallan-sqlite-quote playlist-id)
+       "UPDATE playlists SET song_index = song_index + 1 WHERE id = %s"
        (shallan-sqlite-quote playlist-id))
-      (lambda (hash)
-        (unless (string-empty-p hash)
-          (shallan--mpg-play hash #'shallan-play-next)))))))
+      (lambda (_)
+        (shallan-play-current))))))
+
+(defun shallan-play-prev ()
+  "Select and play the previous song, if any, from the beginning."
+  (interactive)
+  (shallan--ensure-play-queue
+   (lambda (playlist-id)
+     (shallan-sqlite-query
+      (format
+       "UPDATE playlists SET song_index = song_index - 1 WHERE id = %s"
+       (shallan-sqlite-quote playlist-id))
+      (lambda (_)
+        (shallan-play-current))))))
 
 (defun shallan-toggle-playback ()
   "Pause or resume playback."
