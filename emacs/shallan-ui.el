@@ -14,6 +14,7 @@
 (require 'shallan-config)
 (require 'shallan-mode)
 (require 'shallan-object)
+(require 'shallan-play)
 (require 'shallan-query)
 
 ;;;###autoload
@@ -197,29 +198,35 @@ arguments after work is completed."
    (if song
        (format " starting at song %s" song)
      ""))
-  (let ((play
-         (lambda (song)
-           (shallan--ensure-play-queue
-            (lambda (playlist-id)
-              (shallan-sqlite-query
-               (list
-                (format
-                 "DELETE FROM playlist_songs WHERE playlist_id = %s"
-                 (shallan-sqlite-quote playlist-id))
-                (format
-                 "INSERT INTO playlist_songs (song_id, playlist_id, song_index) SELECT id AS song_id, %s AS playlist_id, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
-                 (shallan-sqlite-quote playlist-id)
-                 (shallan-sqlite-quote album))
-                (format
-                 "UPDATE playlists SET song_index = (SELECT song_index FROM (SELECT name, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s) WHERE name = %s) WHERE id = %s"
-                 (shallan-sqlite-quote album)
-                 (shallan-sqlite-quote song)
-                 (shallan-sqlite-quote playlist-id)))
-               (lambda (_)
-                 (shallan-play-current)
-                 (message "Playing album %s starting at song %s...done" album song)
-                 (when callback
-                   (funcall callback)))))))))
+  (let* ((orig-song song)
+         (play
+          (lambda (song)
+            (shallan--ensure-play-queue
+             (lambda (playlist-id)
+               (shallan-sqlite-query
+                (list
+                 (format
+                  "DELETE FROM playlist_songs WHERE playlist_id = %s"
+                  (shallan-sqlite-quote playlist-id))
+                 (format
+                  "INSERT INTO playlist_songs (song_id, playlist_id, song_index) SELECT id AS song_id, %s AS playlist_id, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
+                  (shallan-sqlite-quote playlist-id)
+                  (shallan-sqlite-quote album))
+                 (format
+                  "UPDATE playlists SET song_index = (SELECT song_index FROM (SELECT name, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s) WHERE name = %s) WHERE id = %s"
+                  (shallan-sqlite-quote album)
+                  (shallan-sqlite-quote song)
+                  (shallan-sqlite-quote playlist-id)))
+                (lambda (_)
+                  (shallan-play-current)
+                  (message
+                   "Playing album %s%s...done"
+                   album
+                   (if orig-song
+                       (format " starting at song %s" orig-song)
+                     ""))
+                  (when callback
+                    (funcall callback)))))))))
     (if song
         (funcall play song)
       (shallan-sqlite-query
