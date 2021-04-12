@@ -2,7 +2,8 @@
 
 ;;; Commentary:
 
-;; Control a media server.
+;; Utility functions for manipulating the Shallan content-addressable
+;; object store.
 
 ;;; Code:
 

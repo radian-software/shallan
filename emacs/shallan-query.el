@@ -10,18 +10,7 @@
 (require 'subr-x)
 
 (require 'shallan-config)
-
-(defun shallan--get-unique-buffer-name (format)
-  "Return a name that is not used by any buffer.
-FORMAT is a string for `format' which should take one %d
-parameter."
-  (cl-block nil
-    (let ((num 1))
-      (while t
-        (let ((name (format format num)))
-          (unless (get-buffer name)
-            (cl-return name)))
-        (cl-incf num)))))
+(require 'shallan-util)
 
 (defun shallan--sqlite-sentinel (proc event)
   "Process sentinel for `shallan--sqlite-query'.

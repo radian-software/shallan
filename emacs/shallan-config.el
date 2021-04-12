@@ -35,6 +35,23 @@ If anything is wrong, throw `user-error'."
 This should be unique across different devices."
   :type 'string)
 
+(defcustom shallan-thumbnail-resolution 300
+  "Resolution of thumbnails in album grid view.
+This is how many pixels are in the underlying image. The display
+width (which should be the same or smaller) is given by
+`shallan-thumbnail-width'."
+  :type 'integer)
+
+(defcustom shallan-thumbnail-width 200
+  "Width of thumbnails in album grid view.
+The number of pixels in the underlying image may be larger; see
+`shallan-thumbnail-resolution'."
+  :type 'integer)
+
+(defcustom shallan-thumbnail-margin 20
+  "Margin around thumbnails in album grid view."
+  :type 'integer)
+
 (provide 'shallan-config)
 
 ;;; shallan-config.el ends here

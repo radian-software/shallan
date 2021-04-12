@@ -6,11 +6,14 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'let-alist)
 (require 'subr-x)
 
+(require 'shallan-artwork)
 (require 'shallan-config)
 (require 'shallan-mode)
+(require 'shallan-object)
 (require 'shallan-query)
 
 ;;;###autoload
@@ -34,14 +37,53 @@
               (point-min) (point-max)
               'shallan-play
               (lambda ()
-                (let ((album (buffer-substring-no-properties
-                              (point-at-bol) (point-at-eol))))
-                  (shallan-sqlite-query
-                   (format
-                    "SELECT name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST LIMIT 1"
-                    (shallan-sqlite-quote album))
-                   (lambda (song)
-                     (shallan-play-album album (string-remove-suffix "\n" song))))))))))
+                (shallan-play-album
+                 (buffer-substring-no-properties
+                  (point-at-bol) (point-at-eol))))))))
+
+;;;###autoload
+(defun shallan-browse-albums ()
+  "Display grid view of albums."
+  (interactive)
+  (shallan-display
+   :buffer "albums grid"
+   :mode "Albums/Grid"
+   :query (lambda (callback)
+            (shallan-sqlite-query
+             "SELECT DISTINCT album, artwork_hash FROM songs ORDER BY album_sort COLLATE NOCASE"
+             (lambda (data)
+               (let ((rows (shallan-parse-table data '(album artwork-hash))))
+                 (shallan--get-thumbnails
+                  (mapcar
+                   (lambda (row)
+                     (cons (alist-get 'artwork-hash row)
+                           shallan-thumbnail-resolution))
+                   rows)
+                  (lambda (thumbnails)
+                    (funcall
+                     callback
+                     (cl-mapcar
+                      (lambda (row thumbnail)
+                        `((album . ,(alist-get 'album row))
+                          (thumbnail . ,thumbnail)))
+                      rows
+                      thumbnails))))))))
+   :render (lambda (data)
+             (dolist (datum data)
+               (let-alist datum
+                 (insert
+                  (propertize
+                   " "
+                   'display
+                   (create-image
+                    .thumbnail
+                    nil nil :width shallan-thumbnail-width :margin 20)
+                   'shallan-visit
+                   (lambda ()
+                     (shallan-show-album .album))
+                   'shallan-play
+                   (lambda ()
+                     (shallan-play-album .album)))))))))
 
 ;;;###autoload
 (defun shallan-show-album (&optional album)
@@ -144,33 +186,48 @@ Then invoke CALLBACK with the relevant playlist ID."
        (funcall callback (string-remove-suffix "\n" playlist-id))))))
 
 ;;;###autoload
-(defun shallan-play-album (album song &optional callback)
+(defun shallan-play-album (album &optional song callback)
   "Clear the play queue and add all songs of an ALBUM.
-Set the playback position to given SONG within the album.
-CALLBACK, if provided, is invoked with no arguments after work is
-completed."
-  (message "Playing album %s starting at song %s..." album song)
-  (shallan--ensure-play-queue
-   (lambda (playlist-id)
-     (shallan-sqlite-query
-      (list
+Set the playback position to given SONG (defaults to the first)
+within the album. CALLBACK, if provided, is invoked with no
+arguments after work is completed."
+  (message
+   "Playing album %s%s..."
+   album
+   (if song
+       (format " starting at song %s" song)
+     ""))
+  (let ((play
+         (lambda (song)
+           (shallan--ensure-play-queue
+            (lambda (playlist-id)
+              (shallan-sqlite-query
+               (list
+                (format
+                 "DELETE FROM playlist_songs WHERE playlist_id = %s"
+                 (shallan-sqlite-quote playlist-id))
+                (format
+                 "INSERT INTO playlist_songs (song_id, playlist_id, song_index) SELECT id AS song_id, %s AS playlist_id, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
+                 (shallan-sqlite-quote playlist-id)
+                 (shallan-sqlite-quote album))
+                (format
+                 "UPDATE playlists SET song_index = (SELECT song_index FROM (SELECT name, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s) WHERE name = %s) WHERE id = %s"
+                 (shallan-sqlite-quote album)
+                 (shallan-sqlite-quote song)
+                 (shallan-sqlite-quote playlist-id)))
+               (lambda (_)
+                 (shallan-play-current)
+                 (message "Playing album %s starting at song %s...done" album song)
+                 (when callback
+                   (funcall callback)))))))))
+    (if song
+        (funcall play song)
+      (shallan-sqlite-query
        (format
-        "DELETE FROM playlist_songs WHERE playlist_id = %s"
-        (shallan-sqlite-quote playlist-id))
-       (format
-        "INSERT INTO playlist_songs (song_id, playlist_id, song_index) SELECT id AS song_id, %s AS playlist_id, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
-        (shallan-sqlite-quote playlist-id)
+        "SELECT name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST LIMIT 1"
         (shallan-sqlite-quote album))
-       (format
-        "UPDATE playlists SET song_index = (SELECT song_index FROM (SELECT name, row_number() OVER (ORDER BY disc, track NULLS LAST) AS song_index FROM songs WHERE album = %s) WHERE name = %s) WHERE id = %s"
-        (shallan-sqlite-quote album)
-        (shallan-sqlite-quote song)
-        (shallan-sqlite-quote playlist-id)))
-      (lambda (_)
-        (shallan-play-current)
-        (message "Playing album %s starting at song %s...done" album song)
-        (when callback
-          (funcall callback)))))))
+       (lambda (song)
+         (funcall play (string-remove-suffix "\n" song)))))))
 
 (defun shallan-play-current ()
   "Play the currently selected song from the beginning."
