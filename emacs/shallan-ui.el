@@ -42,6 +42,39 @@
                  (buffer-substring-no-properties
                   (point-at-bol) (point-at-eol))))))))
 
+(defun shallan-browse-album-move-left ()
+  "Move left in the album browsing view."
+  (interactive)
+  (backward-char))
+
+(defun shallan-browse-album-move-right ()
+  "Move right in the album browsing view."
+  (interactive)
+  (save-restriction
+    (narrow-to-region 1 (buffer-size))
+    (forward-char)))
+
+(defun shallan-browse-album-move-up ()
+  "Move up in the album browsing view."
+  (interactive)
+  (line-move-visual -1))
+
+(defun shallan-browse-album-move-down ()
+  "Move down in the album browsing view."
+  (interactive)
+  ;; Just calling `next-line' should work, but doesn't; see
+  ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=48170.
+  (line-move-visual 1))
+
+(defcustom shallan-browse-album-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "<left>") #'shallan-browse-album-move-left)
+    (define-key map (kbd "<right>") #'shallan-browse-album-move-right)
+    (define-key map (kbd "<up>") #'shallan-browse-album-move-up)
+    (define-key map (kbd "<down>") #'shallan-browse-album-move-down)
+    map)
+  "Keymap for `shallan-browse-albums' buffer extra bindings.")
+
 ;;;###autoload
 (defun shallan-browse-albums ()
   "Display grid view of albums."
@@ -84,7 +117,13 @@
                      (shallan-show-album .album))
                    'shallan-play
                    (lambda ()
-                     (shallan-play-album .album)))))))))
+                     (shallan-play-album .album)))))))
+   :keymap shallan-browse-album-keymap
+   :post-command (lambda ()
+                   (save-restriction
+                     (widen)
+                     (goto-char
+                      (min (point) (1- (point-max))))))))
 
 ;;;###autoload
 (defun shallan-show-album (&optional album)

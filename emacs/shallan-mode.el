@@ -114,14 +114,18 @@ same buffer when the refresh is complete."
   (setq-local revert-buffer-function #'shallan--revert-buffer-function)
   (hl-line-mode +1))
 
-(cl-defun shallan-display (&key buffer mode query render)
+(cl-defun shallan-display (&key buffer mode query render keymap post-command)
   "Create and display an interactive Shallan buffer.
 BUFFER-NAME is the name of the buffer. If one exists already then
 it will be refreshed and displayed. MODE-NAME is the major mode
 name for display in the mode line. RENDER is the rendering
 function, which inserts text into the current buffer. RENDER
 should take one CALLBACK argument which it invokes with no
-arguments when the rendering is complete."
+arguments when the rendering is complete. KEYMAP, if given, is
+merged on top of the standard `shallan-mode-map' and given
+precedence if there are conflicts. KEYMAP should not have a
+parent. POST-COMMAND, if given, is invoked with no arguments from
+`post-command-hook'."
   (shallan--validate-environment)
   (with-current-buffer (get-buffer-create (format "*shallan %s*" buffer))
     (shallan-mode)
@@ -137,6 +141,12 @@ arguments when the rendering is complete."
                   (lambda (callback)
                     (shallan-sqlite-query query callback)))))
     (setq-local shallan--render-function (or render #'insert))
+    (when keymap
+      (let ((new-keymap (copy-keymap keymap)))
+        (set-keymap-parent new-keymap (current-local-map))
+        (use-local-map new-keymap)))
+    (when post-command
+      (add-hook 'post-command-hook post-command nil 'local))
     (shallan-refresh
      (lambda ()
        (pop-to-buffer (current-buffer))))))
