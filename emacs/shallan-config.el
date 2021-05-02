@@ -35,21 +35,38 @@ If anything is wrong, throw `user-error'."
 This should be unique across different devices."
   :type 'string)
 
-(defcustom shallan-thumbnail-resolution 300
+(defcustom shallan-grid-thumbnail-resolution 300
   "Resolution of thumbnails in album grid view.
 This is how many pixels are in the underlying image. The display
 width (which should be the same or smaller) is given by
-`shallan-thumbnail-width'."
+`shallan-grid-thumbnail-width'."
   :type 'integer)
 
-(defcustom shallan-thumbnail-width 200
+(defcustom shallan-grid-thumbnail-width 200
   "Width of thumbnails in album grid view.
 The number of pixels in the underlying image may be larger; see
-`shallan-thumbnail-resolution'."
+`shallan-grid-thumbnail-resolution'."
   :type 'integer)
 
-(defcustom shallan-thumbnail-margin 20
+(defcustom shallan-grid-thumbnail-margin 20
   "Margin around thumbnails in album grid view."
+  :type 'integer)
+
+(defcustom shallan-album-thumbnail-resolution 350
+  "Resolution of thumbnails in album detail view.
+This is how many pixels are in the underlying image. The display
+width (which should be the same or smaller) is given by
+`shallan-album-thumbnail-width'."
+  :type 'integer)
+
+(defcustom shallan-album-thumbnail-width 350
+  "Width of thumbnails in album detail view.
+The number of pixels in the underlying image may be larger; see
+`shallan-album-thumbnail-resolution'."
+  :type 'integer)
+
+(defcustom shallan-album-thumbnail-margin 20
+  "Margin around thumbnails in album detail view."
   :type 'integer)
 
 (provide 'shallan-config)

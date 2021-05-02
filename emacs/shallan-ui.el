@@ -91,7 +91,7 @@
                   (mapcar
                    (lambda (row)
                      (cons (alist-get 'artwork-hash row)
-                           shallan-thumbnail-resolution))
+                           shallan-grid-thumbnail-resolution))
                    rows)
                   (lambda (thumbnails)
                     (funcall
@@ -111,7 +111,9 @@
                    'display
                    (create-image
                     .thumbnail
-                    nil nil :width shallan-thumbnail-width :margin 20)
+                    nil nil
+                    :width shallan-grid-thumbnail-width
+                    :margin shallan-grid-thumbnail-margin)
                    'shallan-visit
                    (lambda ()
                      (shallan-show-album .album))
@@ -134,22 +136,56 @@ Nil ALBUM means select one using `completing-read'."
       (shallan-display
        :buffer (format "album: %s" album)
        :mode "Album"
-       :query `((album-data
-                 . ,(format
-                     "SELECT DISTINCT album_artist, year_released FROM songs WHERE album = %s ORDER BY album_artist, year_released"
-                     (shallan-sqlite-quote album)))
-                (songs-data
-                 . ,(format
-                     "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
-                     (shallan-sqlite-quote album))))
+       :query (lambda (callback)
+                (shallan-sqlite-query-parallel
+                 `((album-data
+                    . ,(format
+                        "SELECT DISTINCT album_artist, year_released, artwork_hash FROM songs WHERE album = %s ORDER BY album_artist, year_released"
+                        (shallan-sqlite-quote album)))
+                   (songs-data
+                    . ,(format
+                        "SELECT disc, track, name FROM songs WHERE album = %s ORDER BY disc, track NULLS LAST"
+                        (shallan-sqlite-quote album))))
+                 (lambda (data)
+                   (let-alist data
+                     (shallan--get-thumbnails
+                      (let ((hashes (seq-uniq
+                                     (mapcar
+                                      (lambda (row)
+                                        (alist-get 'artwork-hash row))
+                                      (shallan-parse-table
+                                       .album-data
+                                       '(album-artist year-released artwork-hash))))))
+                        (mapcar
+                         (lambda (hash)
+                           (cons hash shallan-album-thumbnail-resolution))
+                         hashes))
+                      (lambda (thumbnails)
+                        (funcall
+                         callback
+                         `((thumbnails . ,thumbnails) ,@data))))))))
        :render (lambda (data)
                  (let-alist data
                    (let ((rows
                           (shallan-parse-table
                            .album-data
-                           '(album-artist year-released))))
+                           '(album-artist year-released artwork-hash))))
                      (unless rows
                        (error "No such album: %s" album))
+                     (dolist (thumbnail .thumbnails)
+                       (insert
+                        (propertize
+                         " "
+                         'display
+                         (create-image
+                          thumbnail
+                          nil nil
+                          :width shallan-album-thumbnail-width
+                          :margin shallan-album-thumbnail-margin)
+                         'shallan-play
+                         (lambda ()
+                           (shallan-play-album album)))))
+                     (insert "\n\n")
                      (let* ((album-artists (seq-uniq
                                             (mapcar
                                              (lambda (row)
@@ -312,6 +348,19 @@ arguments after work is completed."
        (shallan-sqlite-quote playlist-id))
       (lambda (_)
         (shallan-play-current))))))
+
+(defun shallan-unpause ()
+  "Resume playback."
+  (interactive)
+  (shallan--mpg-unpause))
+
+(defalias 'shallan-play #'shallan-unpause
+  "Resume playback.")
+
+(defun shallan-pause ()
+  "Pause playback."
+  (interactive)
+  (shallan--mpg-pause))
 
 (defun shallan-toggle-playback ()
   "Pause or resume playback."
