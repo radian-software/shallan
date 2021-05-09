@@ -11,7 +11,7 @@
   :group 'applications
   :prefix "shallan-")
 
-(defcustom shallan-library-dir nil
+(defcustom shallan-library-dir (getenv "SHALLAN_HOME")
   "Path to directory containing Shallan music library.
 This directory will contain a SQLite3 database named
 \"library.sqlite3\", and a directory named \"objects\"."
