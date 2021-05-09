@@ -45,6 +45,60 @@ single quotes."
                   "'" "''" string
                   'fixedcase 'literal)))
 
+(defvar shallan--sqlite-safe-keywords
+  (let ((table (make-hash-table :test #'equal)))
+    (puthash "AS"          'safe   table)
+    (puthash "ASC"         'safe   table)
+    (puthash "BY"          'safe   table)
+    (puthash "COLLATE"     'safe   table)
+    (puthash "DELETE"      'unsafe table)
+    (puthash "DESC"        'safe   table)
+    (puthash "DISTINCT"    'safe   table)
+    (puthash "FIRST"       'safe   table)
+    (puthash "FROM"        'safe   table)
+    (puthash "INSERT"      'unsafe table)
+    (puthash "INTO"        'safe   table)
+    (puthash "LAST"        'safe   table)
+    (puthash "LIMIT"       'safe   table)
+    (puthash "NOCASE"      'safe   table)
+    (puthash "NULLS"       'safe   table)
+    (puthash "ORDER"       'safe   table)
+    (puthash "OVER"        'safe   table)
+    (puthash "SELECT"      'safe   table)
+    (puthash "SET"         'safe   table)
+    (puthash "UPDATE"      'unsafe table)
+    (puthash "VALUES"      'safe   table)
+    (puthash "WHERE"       'safe   table)
+    table)
+  "Hash table mapping SQLite keywords to their safety.
+If a query has at least one `unsafe' keyword, it's read-write. If
+all keywords are `safe', the query is read-only.")
+
+(defun shallan--all-matches-in-string (regexp string)
+  "Return a list of all nonoverlapping matches of REGEXP in STRING."
+  (let ((start 0)
+        (matches nil))
+    (cl-block nil
+      (while (< start (length string))
+        (if (string-match regexp string start)
+            (progn
+              (push (match-string 0 string) matches)
+              (setq start (match-end 0)))
+          (cl-return (nreverse matches)))))))
+
+(defun shallan--query-safe-p (query)
+  "Return non-nil if QUERY is known to be read-only.
+Return nil if it may be read-write. Throw an error if we can't
+tell."
+  (cl-block nil
+    (let ((case-fold-search nil))
+      (dolist (kw (shallan--all-matches-in-string "[A-Z]+" query))
+        (pcase (gethash kw shallan--sqlite-safe-keywords)
+          (`safe)
+          (`unsafe
+           (cl-return nil))))
+      t)))
+
 (defun shallan-sqlite-query (query &optional callback)
   "Execute SQL QUERY string against database.
 Invoke CALLBACK with the query results as a string. Delete the
@@ -52,9 +106,16 @@ process buffer before invoking CALLBACK, unless there was an
 error (in which case display the process buffer and do not invoke
 CALLBACK)."
   (when (listp query)
-    (setq query (format
-                 "BEGIN TRANSACTION; %s; COMMIT TRANSACTION"
-                 (string-join query "; "))))
+    (setq query (string-join query "; ")))
+  (unless (shallan--query-safe-p query)
+    (setq query
+          (format
+           "%s; INSERT INTO journal VALUES (%s, %s, %d)"
+           query
+           (shallan-sqlite-quote (shallan-get-uuid))
+           (shallan-sqlite-quote query)
+           (round (* 1000 (float-time))))))
+  (setq query (format "BEGIN TRANSACTION; %s; COMMIT TRANSACTION" query))
   (let ((stdout-buffer (get-buffer-create
                         (shallan--get-unique-buffer-name
                          " *shallan query %d*")))
