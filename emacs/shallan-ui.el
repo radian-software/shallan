@@ -73,7 +73,8 @@
     (define-key map (kbd "<up>") #'shallan-browse-album-move-up)
     (define-key map (kbd "<down>") #'shallan-browse-album-move-down)
     map)
-  "Keymap for `shallan-browse-albums' buffer extra bindings.")
+  "Keymap for `shallan-browse-albums' buffer extra bindings."
+  :type 'lisp)
 
 ;;;###autoload
 (defun shallan-browse-albums ()
