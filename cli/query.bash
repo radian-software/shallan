@@ -8,7 +8,7 @@ function usage_and_die {
 }
 
 function quote {
-    printf "'%s'\n" "$(sed "s/'/''/")"
+    printf "'%s'\n" "$(sed "s/'/''/g")"
 }
 
 if (( $# != 2 )); then
