@@ -89,6 +89,11 @@ type dbPatchRes struct {
 	Txns  []dbPatchResTxn `json:"txns"`
 }
 
+func (api *API) dbGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/vnd.sqlite3")
+	api.DB.Serve(w, r)
+}
+
 func (api *API) dbPatch(w http.ResponseWriter, r *http.Request) {
 	req := dbPatchReq{}
 	if ok := readJSON(w, r, &req); !ok {
@@ -146,6 +151,7 @@ func (api *API) dbPatch(w http.ResponseWriter, r *http.Request) {
 
 func (api *API) Handler() http.Handler {
 	r := mux.NewRouter()
+	r.HandleFunc("/api/v1/db", api.dbGet).Methods("GET")
 	r.HandleFunc("/api/v1/db", api.dbPatch).Methods("PATCH")
 	return r
 }

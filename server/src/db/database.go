@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 )
 
 type DB interface {
+	Serve(w http.ResponseWriter, r *http.Request)
 	Exec(query string, id string, timestamp *time.Time) error
 }
 
@@ -69,6 +71,10 @@ func (db *db) init() error {
 	return nil
 }
 
+func (db *db) Serve(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, db.filename)
+}
+
 func (db *db) Exec(query string, id string, timestamp *time.Time) (err error) {
 	txn, err := db.conn.Begin()
 	if err != nil {
@@ -78,8 +84,7 @@ func (db *db) Exec(query string, id string, timestamp *time.Time) (err error) {
 	defer func() {
 		if finished {
 			return
-		}
-		if err2 := txn.Rollback(); err2 != nil {
+		} else if err2 := txn.Rollback(); err2 != nil {
 			err = fmt.Errorf("%w; %s", err, err2.Error())
 		}
 	}()
