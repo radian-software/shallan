@@ -117,7 +117,16 @@ txns:
 ## Overwrite the server's database
 
 ```
-% http POST :4381/api/v1/db Content-Type:application/vnd.sqlite3 < ...
+% http POST :4381/api/v1/db Content-Type:application/vnd.sqlite3 < ... | yq e -P
+```
+
+Success:
+
+```
+HTTP/1.1 200 OK
+Content-Type: application/json
+---
+error: null
 ```
 
 ## Delete the server's database

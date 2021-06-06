@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,10 +12,13 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/natefinch/atomic"
 )
 
 type DB interface {
 	Serve(w http.ResponseWriter, r *http.Request)
+	Overwrite(r io.Reader) error
+	Delete() error
 	Exec(query string, id string, timestamp *time.Time) error
 }
 
@@ -73,6 +77,20 @@ func (db *db) init() error {
 
 func (db *db) Serve(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, db.filename)
+}
+
+func (db *db) Overwrite(r io.Reader) error {
+	if err := atomic.WriteFile(db.filename, r); err != nil {
+		return err
+	}
+	return db.init()
+}
+
+func (db *db) Delete() error {
+	if err := os.Remove(db.filename); err != nil {
+		return err
+	}
+	return db.init()
 }
 
 func (db *db) Exec(query string, id string, timestamp *time.Time) (err error) {
