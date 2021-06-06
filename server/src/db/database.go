@@ -69,11 +69,20 @@ func (db *db) init() error {
 	return nil
 }
 
-func (db *db) Exec(query string, id string, timestamp *time.Time) error {
+func (db *db) Exec(query string, id string, timestamp *time.Time) (err error) {
 	txn, err := db.conn.Begin()
 	if err != nil {
 		return err
 	}
+	finished := false
+	defer func() {
+		if finished {
+			return
+		}
+		if err2 := txn.Rollback(); err2 != nil {
+			err = fmt.Errorf("%w; %s", err, err2.Error())
+		}
+	}()
 	if _, err := txn.Exec(query); err != nil {
 		return err
 	}
@@ -87,6 +96,8 @@ func (db *db) Exec(query string, id string, timestamp *time.Time) error {
 	}
 	if err := txn.Commit(); err != nil {
 		return err
+	} else {
+		finished = true
 	}
 	return nil
 }

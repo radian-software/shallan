@@ -5,6 +5,10 @@ all: out/shalland
 run: out/shalland
 	out/shalland --host=localhost --port=4381 --database out/library.sqlite3
 
+.PHONY: watch
+watch:
+	watchexec -e go -r -n make run
+
 out:
 	mkdir -p out
 

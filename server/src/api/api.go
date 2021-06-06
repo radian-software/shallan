@@ -73,7 +73,7 @@ type dbPatchReq struct {
 	Txns []struct {
 		Id          string `json:"id"`
 		Txn         string `json:"txn"`
-		TimestampMs int64  `json:"timestamp_ms"`
+		TimestampMs int64  `json:"timestampMs"`
 	} `json:"txns"`
 }
 
@@ -81,6 +81,7 @@ type dbPatchResTxn struct {
 	Id        string `json:"id"`
 	Attempted *bool  `json:"attempted"`
 	Succeeded *bool  `json:"succeeded,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type dbPatchRes struct {
@@ -90,13 +91,29 @@ type dbPatchRes struct {
 
 func (api *API) dbPatch(w http.ResponseWriter, r *http.Request) {
 	req := dbPatchReq{}
-	if ok := readJSON(w, r, req); !ok {
+	if ok := readJSON(w, r, &req); !ok {
 		return
 	}
 	res := dbPatchRes{Txns: []dbPatchResTxn{}}
 	for _, txn := range req.Txns {
 		if err := validateId(txn.Id); err != nil {
 			writeError(w, http.StatusUnprocessableEntity, err)
+			return
+		}
+		if txn.Txn == "" {
+			writeError(
+				w,
+				http.StatusUnprocessableEntity,
+				errors.New("missing field 'txn'"),
+			)
+			return
+		}
+		if txn.TimestampMs == 0 {
+			writeError(
+				w,
+				http.StatusUnprocessableEntity,
+				errors.New("missing field 'timestampMs'"),
+			)
 			return
 		}
 	}
@@ -113,8 +130,15 @@ func (api *API) dbPatch(w http.ResponseWriter, r *http.Request) {
 				Id:        txn.Id,
 				Attempted: util.BoolPtr(true),
 				Succeeded: util.BoolPtr(false),
+				Error:     err.Error(),
 			})
 			skipFollowing = true
+		} else {
+			res.Txns = append(res.Txns, dbPatchResTxn{
+				Id:        txn.Id,
+				Attempted: util.BoolPtr(true),
+				Succeeded: util.BoolPtr(true),
+			})
 		}
 	}
 	writeJSON(w, http.StatusOK, res)
