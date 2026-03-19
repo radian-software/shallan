@@ -1,0 +1,10 @@
+[Unit]
+Description=Shallan music server
+
+[Service]
+Type=exec
+ExecStart=shalland
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

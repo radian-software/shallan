@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$1" = configure ] || [ "$1" = abort-upgrade ] || [ "$1" = abort-deconfigure ] || [ "$1" = abort-remove ]; then
+    deb-systemd-helper unmask shallan.service >/dev/null || true
+    if deb-systemd-helper --quiet was-enabled shallan.service; then
+        deb-systemd-helper enable shallan.service >/dev/null || true
+    else
+        deb-systemd-helper update-state shallan.service >/dev/null || true
+    fi
+fi

@@ -1,0 +1,80 @@
+.TH SHALLAND 8
+.SH NAME
+shalland \- Server daemon to synchronize cross-device Shallan music library
+.SH SYNOPSIS
+.B shalland
+[\fB\-\-port\fR=\fIPORT\fR]
+[\fB\-\-host\fR=\fIHOST\fR]
+[\fB\-\-database\fR=\fIFILE\fR]
+.SH DESCRIPTION
+\fBshalland\fR is a web server that allows you to synchronize your Shallan music library across multiple devices.
+Shallan clients, e.g. for Emacs or Android,
+each maintain their own copy of your library as a SQLite database.
+This means that every client has full functionality
+(play music, read/write metadata)
+on its own and offline.
+\fBshalland\fR is only needed if you want to propagate changes from each device to the others.
+.PP
+\fBshalland\fR typically requires no special configuration or initialization.
+Simply point your client(s) at the IP address (or ideally, hostname) of your server.
+The default is HTTP on port 4381;
+see \fB\-\-tls\fR for HTTPS
+(note that you must provide your own TLS certificate).
+.SH OPTIONS
+.TP
+.BR \-\-port =\fIPORT\fR
+Port to listen for HTTP traffic on.
+Default is 4381, which is an arbitrarily selected number
+that will hopefully not conflict with any other programs.
+.TP
+.BR \-\-host =\fIHOST\fR
+Network interface to listen on (used for both HTTP and HTTPS).
+Default is \fB0.0.0.0\fR, meaning all interfaces.
+To run locally, use \fB127.0.0.1\fR or \fBlocalhost\fR.
+.TP
+.BR \-\-database =\fIFILE\fR
+Path to SQLite database to use.
+Default is \fB/etc/shallan/library.sqlite3\fR.
+If this file or its containing directories do not exist,
+they will be created at startup.
+.TP
+.BR \-\-tls
+Serve HTTPS traffic on a separate port (see \fB\-\-tls\-port\fR),
+and redirect HTTP to HTTPS.
+This option requires
+.B \-\-tls\-cert\-file
+and
+.B \-\-tls\-key\-file
+to be specified alongside it.
+.TP
+.BR \-\-tls\-port =\fIPORT\fR
+Port to listen for HTTPS traffic on.
+Default is 4382, which is one greater than the default value for \fB\-\-port\fR.
+.TP
+.BR \-\-tls\-cert\-file =\fIFILE\fR
+Path to TLS public certificate file as provisioned by e.g. Let's Encrypt.
+This option only has an effect alongside \fB\-\-tls\fR.
+.TP
+.BR \-\-tls\-key\-file =\fIFILE\fR
+Path to TLS private key file as provisioned by e.g. Let's Encrypt.
+This option only has an effect alongside \fB\-\-tls\fR.
+.SH EXIT STATUS
+.B shalland
+does not exit unless interrupted or unless a fatal error occurs,
+in which case the exit status is nonzero.
+.SH FILES
+.TP
+/etc/shallan/library.sqlite3
+Default system-global database for Shallan.
+Overridden by the
+.B \-\-database
+option.
+.SH NOTES
+You can test that the server is running correctly using \fBcurl\fR:
+.PP
+.in +4n
+.EX
+$ \fBcurl http://localhost:4381/api/v1/health\fR
+{"error":null}
+.EE
+.in

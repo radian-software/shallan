@@ -17,8 +17,9 @@ var cli struct {
 	TLS         bool   `help:"Enable TLS (requires --tls-cert-file, --tls-key-file)." default:"false"`
 	TLSPort     int    `help:"Port to listen for HTTPS on." default:"443"`
 	TLSCertFile string `help:"TLS certificate file to use."`
-	TLSKeyFile  string `help:"TLS private key file to use."`
-	Database    string `help:"SQLite database to use." default:"/etc/shallan/library.sqlite3"`
+
+	TLSKeyFile string `help:"TLS private key file to use."`
+	Database   string `help:"SQLite database to use." default:"/etc/shallan/library.sqlite3"`
 }
 
 func run() error {

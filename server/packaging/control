@@ -1,0 +1,8 @@
+Package: shalland
+Version: VERSION
+Architecture: ARCH
+Depends: sqlite3
+Section: net
+Priority: optional
+Maintainer: Radon Rosborough <radon.neon@gmail.com>
+Description: Synchronization server for Shallan music player clients
